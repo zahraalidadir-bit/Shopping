@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Shopping List</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+    --text: var(--tg-theme-text-color, #16161a);
+    --hint: var(--tg-theme-hint-color, #8b8b93);
+    --accent: var(--tg-theme-button-color, #2f8ee0);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --header: var(--tg-theme-section-header-text-color, var(--hint));
+    --sep: var(--tg-theme-section-separator-color, rgba(128,128,128,.18));
+    --danger: var(--tg-theme-destructive-text-color, #e5484d);
+    --input: var(--tg-theme-bg-color, #ffffff);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.tg) {
+      --bg: #0f0f12; --card: #1c1c21; --text: #f2f2f5; --hint: #8d8d97;
+      --input: #1c1c21; --sep: rgba(255,255,255,.08);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Vazirmatn", sans-serif;
+    min-height: 100vh;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  input { font: inherit; color: var(--text); }
+
+  /* ---- top bar ---- */
+  .top { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 14px 16px 10px; }
+  .title-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+  .count { color: var(--hint); font-size: 15px; flex: 1; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); font-size: 19px; }
+  .icon-btn.spin { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .add { display: flex; gap: 8px; }
+  .add input {
+    flex: 1; min-width: 0; height: 44px; padding: 0 14px; border-radius: 12px;
+    border: 1px solid var(--sep); background: var(--input); outline: none;
+  }
+  .add input:focus { border-color: var(--accent); }
+  .add input::placeholder { color: var(--hint); }
+  .add-btn {
+    width: 44px; height: 44px; border-radius: 12px; background: var(--accent); color: var(--accent-text);
+    font-size: 26px; line-height: 1; display: grid; place-items: center;
+  }
+  .suggest { display: flex; gap: 6px; overflow-x: auto; padding-top: 8px; scrollbar-width: none; }
+  .suggest:empty { display: none; }
+  .suggest::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; padding: 6px 12px; border-radius: 999px; background: var(--card);
+    border: 1px solid var(--sep); font-size: 14px; white-space: nowrap;
+  }
+
+  /* ---- list ---- */
+  main { padding: 4px 16px 0; }
+  .group-h {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--header);
+    margin: 18px 4px 6px; font-weight: 600;
+  }
+  .card { background: var(--card); border-radius: 14px; overflow: hidden; }
+  .row {
+    display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px;
+    position: relative; transition: opacity .25s, transform .25s;
+  }
+  .row + .row::before {
+    content: ""; position: absolute; top: 0; left: 50px; right: 0; height: 1px; background: var(--sep);
+  }
+  .check {
+    flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--hint);
+    display: grid; place-items: center; transition: background .15s, border-color .15s;
+  }
+  .check::after { content: ""; width: 10px; height: 5px; border: solid var(--accent-text); border-width: 0 0 2px 2px; transform: rotate(-45deg) translate(1px,-1px); opacity: 0; }
+  .row.done .check { background: var(--accent); border-color: var(--accent); }
+  .row.done .check::after { opacity: 1; }
+  .row.done .name { text-decoration: line-through; color: var(--hint); }
+  .row.done { opacity: .55; }
+  .body { flex: 1; min-width: 0; text-align: start; }
+  .name { overflow-wrap: anywhere; }
+  .meta { font-size: 13px; color: var(--hint); margin-top: 1px; overflow-wrap: anywhere; }
+  .qty {
+    flex: none; font-size: 13px; font-weight: 600; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent); padding: 3px 9px; border-radius: 999px;
+  }
+  .emoji { flex: none; width: 24px; text-align: center; }
+  .readd { flex: none; color: var(--accent); font-weight: 600; font-size: 15px; padding: 6px 4px; }
+
+  .empty { text-align: center; padding: 48px 20px 24px; }
+  .empty .big { font-size: 44px; margin-bottom: 8px; }
+  .hint { color: var(--hint); font-size: 14px; margin-top: 4px; }
+  .status { text-align: center; color: var(--hint); padding: 48px 20px; }
+
+  details.recent { margin-top: 26px; }
+  details.recent summary {
+    list-style: none; cursor: pointer; font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--header); font-weight: 600; margin: 0 4px 6px; display: flex; justify-content: space-between;
+  }
+  details.recent summary::-webkit-details-marker { display: none; }
+  details.recent summary::after { content: "Show"; text-transform: none; letter-spacing: 0; color: var(--accent); font-weight: 500; font-size: 14px; }
+  details.recent[open] summary::after { content: "Hide"; }
+
+  /* ---- toast ---- */
+  .toast {
+    position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 20;
+    background: #222226; color: #fff; border-radius: 12px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    animation: up .2s ease-out;
+  }
+  .toast[hidden] { display: none; }
+  .toast span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast button { color: #6cb8ff; font-weight: 600; }
+  @keyframes up { from { transform: translateY(20px); opacity: 0; } }
+
+  /* ---- edit sheet ---- */
+  .sheet-wrap { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); display: flex; align-items: flex-end; }
+  .sheet-wrap[hidden] { display: none; }
+  .sheet {
+    width: 100%; max-height: 92vh; overflow-y: auto; background: var(--bg);
+    border-radius: 18px 18px 0 0; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+    animation: up .22s ease-out;
+  }
+  .grab { width: 36px; height: 5px; border-radius: 3px; background: var(--sep); margin: 0 auto 12px; }
+  .sheet h2 { font-size: 18px; margin: 0 0 12px; }
+  .field { display: block; margin-bottom: 12px; }
+  .field span { display: block; font-size: 13px; color: var(--hint); margin: 0 4px 5px; }
+  .field input { width: 100%; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--sep); background: var(--input); outline: none; }
+  .field input:focus { border-color: var(--accent); }
+  .cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-bottom: 18px; }
+  .cats button {
+    text-align: start; padding: 9px 10px; border-radius: 10px; background: var(--card);
+    border: 1.5px solid transparent; font-size: 14px;
+  }
+  .cats button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .sheet-actions { display: flex; gap: 10px; }
+  .sheet-actions button { flex: 1; height: 46px; border-radius: 12px; font-weight: 600; }
+  .primary { background: var(--accent); color: var(--accent-text) !important; }
+  .danger { background: var(--card); color: var(--danger) !important; }
+</style>
+</head>
+<body>
+  <header class="top">
+    <div class="title-row">
+      <h1>Shopping</h1>
+      <span id="count" class="count"></span>
+      <button id="refresh" class="icon-btn" aria-label="Refresh">↻</button>
+    </div>
+    <form id="addForm" class="add" autocomplete="off">
+      <input id="addInput" placeholder="Add… e.g. 2 milk, bread" enterkeyhint="done" dir="auto">
+      <button type="submit" class="add-btn" aria-label="Add">+</button>
+    </form>
+    <div id="suggest" class="suggest"></div>
+  </header>
+
+  <main id="main"><div class="status">Loading…</div></main>
+
+  <div id="toast" class="toast" hidden><span id="toastText"></span><button id="toastUndo">Undo</button></div>
+
+  <div id="sheetWrap" class="sheet-wrap" hidden>
+    <div class="sheet" role="dialog" aria-label="Edit item">
+      <div class="grab"></div>
+      <h2>Edit item</h2>
+      <label class="field"><span>Name</span><input id="fName" dir="auto"></label>
+      <label class="field"><span>Quantity</span><input id="fQty" placeholder="e.g. 2, 500 g, 1 pack" dir="auto"></label>
+      <label class="field"><span>Note</span><input id="fNote" placeholder="e.g. the lactose-free one" dir="auto"></label>
+      <div class="field"><span>Category</span></div>
+      <div id="fCats" class="cats"></div>
+      <div class="sheet-actions">
+        <button id="fDelete" class="danger">Delete</button>
+        <button id="fSave" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ====== SETTING: paste your Apps Script Web app URL (ends with /exec) ====== */
+const API_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
+/* ========================================================================== */
+
+const tg = window.Telegram && window.Telegram.WebApp;
+const CATS = [
+  ['produce', '🥦', 'Fruit & veg'], ['bakery', '🍞', 'Bakery'], ['dairy', '🥛', 'Dairy & eggs'],
+  ['meat', '🍗', 'Meat & fish'], ['frozen', '🧊', 'Frozen'], ['pantry', '🥫', 'Pantry'],
+  ['drinks', '🥤', 'Drinks'], ['household', '🧽', 'Household'], ['drugstore', '🧴', 'Drugstore'],
+  ['other', '📦', 'Other'],
+];
+const CAT_KEYS = CATS.map(c => c[0]);
+const EMOJI = Object.fromEntries(CATS.map(c => [c[0], c[1]]));
+
+const $ = id => document.getElementById(id);
+const main = $('main'), input = $('addInput');
+let state = { items: [], recent: [] };
+let keywords = [];
+let loaded = false, fatal = null, recentOpen = false;
+let queue = Promise.resolve(), inflight = 0;
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+const uid = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const catOf = i => CAT_KEYS.includes(i.cat) ? i.cat : 'other';
+function haptic(kind) {
+  try {
+    if (!tg || !tg.HapticFeedback) return;
+    if (kind === 'success') tg.HapticFeedback.notificationOccurred('success');
+    else tg.HapticFeedback.impactOccurred('light');
+  } catch (e) {}
+}
+
+/* ---------- server ---------- */
+function api(action, payload) {
+  inflight++;
+  if (action === 'get') $('refresh').classList.add('spin');
+  const run = () => fetch(API_URL, {
+    method: 'POST', // body sent as text/plain → no CORS preflight; Apps Script handles it
+    body: JSON.stringify({ api: true, action, payload: payload || {}, initData: tg ? tg.initData : '' }),
+  }).then(r => r.json());
+
+  const p = queue.then(run).then(res => {
+    inflight--;
+    if (!res.ok) {
+      if (res.error === 'auth' || res.error === 'not_owner') { fatal = res.error; render(); return; }
+      throw new Error(res.error || 'error');
+    }
+    if (res.keywords) keywords = res.keywords;
+    loaded = true;
+    if (inflight === 0) { state = { items: res.items, recent: res.recent }; render(); }
+  }).catch(err => {
+    inflight--;
+    console.error(err);
+    showToast("Couldn't reach your list. Check your connection and tap ↻.");
+    if (!loaded) { fatal = 'network'; render(); }
+  }).finally(() => { if (inflight === 0) $('refresh').classList.remove('spin'); });
+  queue = p;
+  return p;
+}
+
+/* ---------- helpers mirroring the backend ---------- */
+function guessCat(name) {
+  const s = name.toLowerCase();
+  const words = s.split(/[\s\-_,.()\/]+/).filter(Boolean);
+  for (const [cat, kws] of keywords) {
+    for (const kw of kws) {
+      const hit = kw.includes(' ') ? s.includes(kw)
+        : words.some(w => w === kw || (kw.length >= 4 && w.startsWith(kw)));
+      if (hit) return cat;
+    }
+  }
+  return 'other';
+}
+function parseQty(s) {
+  s = s.trim();
+  let m = s.match(/^(\d+(?:[.,]\d+)?\s*(?:x|×|g|kg|ml|l|pcs|stk)?)\s+(.+)$/i);
+  if (m) return { qty: m[1].replace(/\s*[x×]$/i, '').trim(), name: m[2].trim() };
+  m = s.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
+  if (m) return { qty: m[2], name: m[1].trim() };
+  return { qty: '', name: s };
+}
+
+/* ---------- actions ---------- */
+function addFromInput() {
+  const parts = input.value.split(/[,\n،]+/).map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return;
+  let added = 0;
+  for (const part of parts) {
+    const { name, qty } = parseQty(part);
+    if (!name || state.items.some(i => same(i.name, name))) continue;
+    const prev = state.recent.find(r => same(r.name, name));
+    const id = uid();
+    state.items.push({ id, name: name.slice(0, 80), qty, note: '', cat: prev ? prev.cat : guessCat(name) });
+    state.recent = state.recent.filter(r => !same(r.name, name));
+    api('add', { id, name, qty });
+    added++;
+  }
+  input.value = '';
+  renderSuggest();
+  render();
+  if (added) haptic();
+  else showToast('Already on your list.');
+}
+
+function buy(id) {
+  const item = state.items.find(i => i.id === id);
+  if (!item) return;
+  haptic('success');
+  const row = main.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+  if (row) row.classList.add('done');
+  state.items = state.items.filter(i => i.id !== id);
+  state.recent = [item, ...state.recent.filter(r => !same(r.name, item.name))].slice(0, 30);
+  setTimeout(render, 350);
+  api('bought', { id });
+  showToast('Bought ' + item.name, () => readd(id));
+}
+
+function readd(recentId) {
+  const r = state.recent.find(x => x.id === recentId);
+  if (!r) return;
+  const id = uid();
+  state.recent = state.recent.filter(x => x.id !== recentId);
+  if (!state.items.some(i => same(i.name, r.name))) state.items.push({ ...r, id });
+  haptic();
+  render();
+  renderSuggest();
+  api('readd', { recentId, id });
+}
+
+/* ---------- edit sheet ---------- */
+let editing = null, editCat = 'other';
+function openEdit(id) {
+  const item = state.items.find(i => i.id === id);
+  if (!item) return;
+  editing = id; editCat = catOf(item);
+  $('fName').value = item.name; $('fQty').value = item.qty || ''; $('fNote').value = item.note || '';
+  renderCats();
+  $('sheetWrap').hidden = false;
+  if (tg && tg.BackButton) { tg.BackButton.show(); }
+}
+function closeEdit() {
+  $('sheetWrap').hidden = true; editing = null;
+  if (tg && tg.BackButton) tg.BackButton.hide();
+}
+function renderCats() {
+  $('fCats').innerHTML = CATS.map(([k, e, l]) =>
+    `<button type="button" data-cat="${k}" class="${k === editCat ? 'on' : ''}">${e} ${l}</button>`).join('');
+}
+$('fCats').addEventListener('click', e => {
+  const b = e.target.closest('[data-cat]'); if (!b) return;
+  editCat = b.dataset.cat; renderCats(); haptic();
+});
+$('fSave').addEventListener('click', () => {
+  const item = state.items.find(i => i.id === editing);
+  if (item) {
+    const name = $('fName').value.trim();
+    if (name && !state.items.some(i => i.id !== item.id && same(i.name, name))) item.name = name.slice(0, 80);
+    item.qty = $('fQty').value.trim().slice(0, 20);
+    item.note = $('fNote').value.trim().slice(0, 120);
+    item.cat = editCat;
+    api('update', { id: item.id, name: item.name, qty: item.qty, note: item.note, cat: item.cat });
+    render();
+  }
+  closeEdit();
+});
+$('fDelete').addEventListener('click', () => {
+  const item = state.items.find(i => i.id === editing);
+  if (item) {
+    state.items = state.items.filter(i => i.id !== item.id);
+    api('remove', { id: item.id });
+    render();
+    showToast('Removed ' + item.name);
+  }
+  closeEdit();
+});
+$('sheetWrap').addEventListener('click', e => { if (e.target === $('sheetWrap')) closeEdit(); });
+
+/* ---------- toast ---------- */
+let toastTimer = null, toastUndo = null;
+function showToast(text, undo) {
+  $('toastText').textContent = text;
+  toastUndo = undo || null;
+  $('toastUndo').hidden = !undo;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 4000);
+}
+$('toastUndo').addEventListener('click', () => {
+  if (toastUndo) toastUndo();
+  toastUndo = null; $('toast').hidden = true;
+});
+
+/* ---------- rendering ---------- */
+function rowHTML(i) {
+  const meta = i.note ? `<div class="meta">${esc(i.note)}</div>` : '';
+  const qty = i.qty ? `<span class="qty">${esc(i.qty)}</span>` : '';
+  return `<div class="row" data-id="${esc(i.id)}">
+    <button class="check" data-act="buy" aria-label="Mark ${esc(i.name)} as bought"></button>
+    <button class="body" data-act="edit"><div class="name" dir="auto">${esc(i.name)}</div>${meta}</button>
+    ${qty}
+  </div>`;
+}
+
+function render() {
+  if (fatal) {
+    const msg = {
+      auth: ['🔒', 'Open this from your bot', 'Tap the 🛒 List button in your bot\'s chat in Telegram.'],
+      not_owner: ['👋', 'Not linked yet', 'Send /start to your bot in Telegram first, then reopen this list.'],
+      network: ['📡', "Couldn't load your list", 'Check your connection, then tap ↻ to try again.'],
+    }[fatal];
+    main.innerHTML = `<div class="empty"><div class="big">${msg[0]}</div><div><b>${msg[1]}</b></div><div class="hint">${msg[2]}</div></div>`;
+    $('count').textContent = '';
+    return;
+  }
+  if (!loaded) { main.innerHTML = '<div class="status">Loading…</div>'; return; }
+
+  const items = state.items;
+  $('count').textContent = items.length ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : '';
+  let html = '';
+  if (!items.length) {
+    html += `<div class="empty"><div class="big">🎉</div><div><b>Nothing to buy</b></div>
+      <div class="hint">Add something above, or just text it to the bot.</div></div>`;
+  }
+  for (const [key, emoji, label] of CATS) {
+    const group = items.filter(i => catOf(i) === key);
+    if (!group.length) continue;
+    html += `<div class="group-h">${emoji} ${label}</div><div class="card">${group.map(rowHTML).join('')}</div>`;
+  }
+  if (state.recent.length) {
+    html += `<details class="recent"${recentOpen ? ' open' : ''}><summary>Recently bought · ${state.recent.length}</summary><div class="card">` +
+      state.recent.map(r => `<div class="row" data-id="${esc(r.id)}">
+        <span class="emoji">${EMOJI[catOf(r)]}</span>
+        <div class="body"><div class="name" dir="auto">${esc(r.name)}</div></div>
+        <button class="readd" data-act="readd">Add</button></div>`).join('') +
+      `</div></details>`;
+  }
+  main.innerHTML = html;
+  const d = main.querySelector('details.recent');
+  if (d) d.addEventListener('toggle', () => { recentOpen = d.open; });
+}
+
+function renderSuggest() {
+  const q = input.value.split(/[,،]/).pop().trim().toLowerCase();
+  const box = $('suggest');
+  if (!q) { box.innerHTML = ''; return; }
+  const hits = state.recent.filter(r => r.name.toLowerCase().includes(q)).slice(0, 8);
+  box.innerHTML = hits.map(r => `<button class="chip" data-rid="${esc(r.id)}">${EMOJI[catOf(r)]} ${esc(r.name)}</button>`).join('');
+}
+
+/* ---------- events ---------- */
+main.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const id = el.closest('.row').dataset.id;
+  if (el.dataset.act === 'buy') buy(id);
+  else if (el.dataset.act === 'edit') openEdit(id);
+  else if (el.dataset.act === 'readd') readd(id);
+});
+$('addForm').addEventListener('submit', e => { e.preventDefault(); addFromInput(); });
+input.addEventListener('input', renderSuggest);
+$('suggest').addEventListener('mousedown', e => e.preventDefault()); // keep keyboard open
+$('suggest').addEventListener('click', e => {
+  const b = e.target.closest('[data-rid]'); if (!b) return;
+  readd(b.dataset.rid);
+  const parts = input.value.split(/[,،]/); parts.pop();
+  input.value = parts.length ? parts.join(',') + ', ' : '';
+  renderSuggest();
+});
+$('refresh').addEventListener('click', () => { if (!fatal || fatal === 'network') { fatal = null; api('get'); } });
+
+/* ---------- start ---------- */
+if (!tg || !tg.initData) {
+  fatal = 'auth'; render();
+} else {
+  document.documentElement.classList.add('tg');
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor('secondary_bg_color'); tg.setBackgroundColor('secondary_bg_color'); } catch (e) {}
+  if (tg.BackButton) tg.BackButton.onClick(closeEdit);
+  try { tg.onEvent('activated', () => api('get')); } catch (e) {}
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && loaded) api('get'); });
+  api('get');
+}
+</script>
+</body>
+</html>
